@@ -1,6 +1,5 @@
-import { createApi, ensureProvider, discoverModels, summary } from './lib/alma.mjs';
-
 export async function activate(context) {
+  const { createApi, ensureProvider, discoverModels, summary } = await import(`./lib/alma.mjs?activation=${Date.now()}`);
   const api = () => createApi(context.settings.get('devin.apiUrl', 'http://localhost:23001'));
   let pending;
   const ensure = () => pending ||= ensureProvider(api(), context.settings.get('devin.command', 'devin'))

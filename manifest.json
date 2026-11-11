@@ -1,7 +1,7 @@
 {
   "id": "alma-devin-cli",
   "name": "Devin CLI (Native ACP)",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "复用 Alma 原生 ACP 提供商连接本机 Devin CLI，不代理私有 API。",
   "author": { "name": "tiensonqin" },
   "main": "main.js",

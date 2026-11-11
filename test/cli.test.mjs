@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 async function withHost(handler, callback) {
   const server = createServer(async (request, response) => {
@@ -60,13 +61,14 @@ test('installer stages only plugin files, is idempotent, uninstall retains provi
       return provider;
     }
     if (path === '/api/plugins' && method === 'GET') return installed ? [{ id: 'alma-devin-cli' }] : [];
+    if (path.startsWith('/api/providers/') && method === 'PUT' && !path.endsWith('/models')) { provider = { ...provider, ...body }; return provider; }
     if (path === '/api/plugins' && method === 'POST') {
-      assert.deepEqual((await readdir(body.sourcePath)).sort(), ['lib', 'main.js', 'manifest.json']);
+      assert.deepEqual((await readdir(body.sourcePath)).sort(), ['bin', 'lib', 'main.js', 'manifest.json', 'node_modules', 'package.json']);
       installed = true;
       installCount++;
       return { enabled: true };
     }
-    if (path === '/api/plugins/alma-devin-cli' && method === 'GET') return { enabled: installed };
+    if (path === '/api/plugins/alma-devin-cli' && method === 'GET') return { enabled: installed, version: '0.1.2', sourcePath: resolve('.') };
     if (path === '/api/plugins/alma-devin-cli' && method === 'DELETE') { installed = false; return; }
     throw new Error('Unexpected request');
   }, async run => {
@@ -77,6 +79,39 @@ test('installer stages only plugin files, is idempotent, uninstall retains provi
     await run('uninstall');
     assert.equal(installed, false);
     assert.equal(provider.id, 'devin-cli-acp');
+    assert.equal(provider.acpCommand, 'devin');
+    assert.deepEqual(provider.acpArgs, ['acp']);
+  });
+});
+
+test('upgrade reinstalls only this plugin and restores settings, grants and disabled state', async () => {
+  let provider = { id: 'devin-cli-acp', type: 'acp', acpCommand: 'devin', acpArgs: ['acp'], models: ['test-model'] };
+  let plugin = { version: '0.1.1', enabled: false, sourcePath: resolve('.'), settings: { 'devin.command': 'devin' }, permissions: [{ permission: 'network:localhost', status: 'denied' }] };
+  const calls = [];
+  await withHost(async (method, path, body) => {
+    calls.push({ method, path, body });
+    if (path === '/api/providers') return [provider];
+    if (path === '/api/providers/devin-cli-acp' && method === 'PUT') { provider = { ...provider, ...body }; return provider; }
+    if (path.endsWith('/models/fetch')) return { models: [{ id: 'test-model' }] };
+    if (path === '/api/plugins' && method === 'GET') return [{ id: 'alma-devin-cli' }];
+    if (path === '/api/plugins/alma-devin-cli' && method === 'GET') return plugin;
+    if (path === '/api/plugins/alma-devin-cli' && method === 'DELETE') return;
+    if (path === '/api/plugins' && method === 'POST') { plugin = { version: '0.1.2', enabled: true, sourcePath: resolve('.'), settings: {}, permissions: [] }; return plugin; }
+    if (path.endsWith('/settings')) { plugin.settings = body; return body; }
+    if (path.endsWith('/permissions')) { plugin.permissions.push(body); return plugin.permissions; }
+    if (path.endsWith('/disable')) { plugin.enabled = false; return plugin; }
+    throw new Error('Unexpected request');
+  }, async run => {
+    const result = JSON.parse(await run('install'));
+    assert.equal(result.upgraded, true);
+    assert.equal(result.permissionMode, 'bypass');
+    assert.equal(plugin.enabled, false);
+    assert.deepEqual(plugin.settings, { 'devin.command': 'devin' });
+    assert.deepEqual(plugin.permissions, [{ permission: 'network:localhost', status: 'denied' }]);
+    assert.equal(calls.some(call => call.path.includes('/refresh')), false);
+    assert.equal(calls.filter(call => call.method === 'DELETE').length, 1);
+    await run('install');
+    assert.equal(calls.filter(call => call.method === 'DELETE').length, 1);
   });
 });
 

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -13,30 +13,51 @@ async function run() {
   api = createApi(process.env.ALMA_API_URL);
   if (action === 'install') {
     const command = process.env.DEVIN_COMMAND || execFileSync('which', ['devin'], { encoding: 'utf8' }).trim();
-    const { provider, created } = await ensureProvider(api, command);
-    const models = await discoverModels(api, provider);
+    const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
     const plugins = await api('/api/plugins');
     const entries = Array.isArray(plugins) ? plugins : plugins.plugins;
     if (!Array.isArray(entries)) throw new Error('无法识别 Alma 插件列表，停止安装。');
-    if (!entries.some(plugin => plugin.id === PLUGIN_ID)) {
+    const previous = entries.some(plugin => plugin.id === PLUGIN_ID) ? await api(`/api/plugins/${PLUGIN_ID}`) : undefined;
+    const upgraded = previous && (previous.version !== manifest.version || process.argv.includes('--force'));
+    if (!previous || upgraded) {
       const stage = await mkdtemp(join(root, '.install-'));
       try {
-        for (const file of ['manifest.json', 'main.js', 'lib']) {
+        for (const file of ['manifest.json', 'package.json', 'main.js', 'lib', 'bin']) {
           await cp(join(root, file), join(stage, file), { recursive: true });
         }
+        for (const dependency of ['@agentclientprotocol/sdk', 'zod']) {
+          await cp(join(root, 'node_modules', dependency), join(stage, 'node_modules', dependency), { recursive: true });
+        }
+        if (upgraded) await api(`/api/plugins/${PLUGIN_ID}`, 'DELETE');
         await api('/api/plugins', 'POST', { sourcePath: stage, source: 'global' });
+        if (upgraded) {
+          await api(`/api/plugins/${PLUGIN_ID}/settings`, 'PUT', previous.settings || {});
+          for (const { permission, status } of previous.permissions || []) {
+            if (['granted', 'denied'].includes(status)) await api(`/api/plugins/${PLUGIN_ID}/permissions`, 'PUT', { permission, status });
+          }
+          if (!previous.enabled) await api(`/api/plugins/${PLUGIN_ID}/disable`, 'POST', {});
+        }
       } finally {
         await rm(stage, { recursive: true, force: true });
       }
     }
     const installed = await api(`/api/plugins/${PLUGIN_ID}`);
-    if (!installed.enabled) throw new Error('插件已安装但未启用，请在 Alma 设置中启用。');
-    console.log(JSON.stringify({ installed: true, reusedProvider: !created, providerId: provider.id, discoveredModels: models.length }));
+    if (installed.version !== manifest.version || !installed.sourcePath) throw new Error('插件版本或安装路径未确认，停止配置。');
+    const { provider, created } = await ensureProvider(api, command, join(installed.sourcePath, 'bin', 'devin-acp.mjs'), process.execPath);
+    const models = await discoverModels(api, provider);
+    console.log(JSON.stringify({ installed: true, upgraded: Boolean(upgraded), enabled: installed.enabled, reusedProvider: !created, providerId: provider.id, permissionMode: summary(provider).permissionMode, discoveredModels: models.length }));
     return;
   }
   if (action === 'uninstall') {
+    const installed = await api(`/api/plugins/${PLUGIN_ID}`);
+    const provider = findProvider(await api('/api/providers'));
+    if (provider?.acpArgs?.[0] === join(installed.sourcePath, 'bin', 'devin-acp.mjs')) {
+      await api(`/api/providers/${encodeURIComponent(provider.id)}`, 'PUT', {
+        acpCommand: provider.acpArgs[2], acpArgs: provider.acpArgs.slice(4),
+      });
+    }
     await api(`/api/plugins/${PLUGIN_ID}`, 'DELETE');
-    console.log('插件已卸载。ACP 提供商和 Devin 登录均保留；可在 Alma 设置中单独删除提供商。');
+    console.log('插件已卸载。ACP 提供商和 Devin 登录保留；本插件启动层已还原为原生 Devin 命令，bypass 不再由插件保证。');
     return;
   }
   const provider = findProvider(await api('/api/providers'));

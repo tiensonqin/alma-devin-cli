@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApi, ensureProvider, findProvider, discoverModels, summary } from '../lib/alma.mjs';
+import { fileURLToPath } from 'node:url';
 import { activate } from '../main.js';
 
-const existing = { id: 'devin-cli-acp', type: 'acp', acpCommand: 'devin', acpArgs: ['acp'], enabled: true, models: ['real-model'] };
+const launcher = fileURLToPath(new URL('../bin/devin-acp.mjs', import.meta.url));
+const existing = { id: 'devin-cli-acp', type: 'acp', acpCommand: process.execPath, acpArgs: [launcher, '--devin-command', 'devin', '--', 'acp'], enabled: true, models: ['real-model'] };
 
 test('reuse canonical provider without mutation or exposing credentials', async () => {
   const calls = [];
@@ -30,8 +32,32 @@ test('create only a native ACP provider with stable identity', async () => {
   assert.equal(result.created, true);
   assert.deepEqual(calls[1], ['/api/providers', 'POST', {
     id: 'devin-cli-acp', name: 'Devin CLI (ACP)', type: 'acp', enabled: true,
-    acpCommand: 'devin', acpArgs: ['acp'], models: [],
+    acpCommand: 'node', acpArgs: existing.acpArgs, models: [],
   }]);
+});
+
+test('upgrade only Devin launch fields, preserve native arguments and other providers', async () => {
+  const legacy = { ...existing, id: 'custom-devin', acpCommand: 'devin', acpArgs: ['acp', '--model', 'keep-model'], enabled: false, acpMcpServerIds: ['keep'] };
+  const calls = [];
+  const result = await ensureProvider(async (...args) => {
+    calls.push(args);
+    return args[1] === 'PUT' ? { ...legacy, ...args[2] } : [{ id: 'other', type: 'openai' }, legacy];
+  });
+  assert.deepEqual(calls[2], ['/api/providers/custom-devin', 'PUT', {
+    acpCommand: 'node', acpArgs: [launcher, '--devin-command', 'devin', '--', ...legacy.acpArgs],
+  }]);
+  assert.equal(result.provider.enabled, false);
+  assert.deepEqual(result.provider.acpMcpServerIds, ['keep']);
+  assert.equal(summary(result.provider).permissionMode, 'bypass');
+});
+
+test('concurrent provider launch changes are not overwritten', async () => {
+  let reads = 0;
+  const legacy = { ...existing, acpCommand: 'devin', acpArgs: ['acp'] };
+  await assert.rejects(ensureProvider(async (path, method) => {
+    assert.equal(method, undefined);
+    return [{ ...legacy, acpArgs: ++reads === 1 ? ['acp'] : ['acp', '--model', 'parallel-edit'] }];
+  }), /并行修改/);
 });
 
 test('model discovery preserves existing selections and only initializes empty selection', async () => {
