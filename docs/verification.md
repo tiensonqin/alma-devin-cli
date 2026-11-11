@@ -86,7 +86,7 @@ The repair task also reported two random-file tool completions followed by a fin
 The first chat test used OpenAI-style `content` messages, and the host returned `Invalid prompt: messages must not be empty`.
 After inspecting the host read-only, the test was changed to Alma's required `{ id, role, parts: [{ type: 'text', text }] }` format. A regression test was added, and the two-turn chat passed on rerun. The host was not modified to accommodate the test.
 
-## Not tested and limitations
+## Untested features and limitations
 
 - No physical mobile pairing or touch-interaction testing was performed. Model entries were verified on the Mac's shared service; that does not establish successful phone pairing.
 - The phone must connect to the Mac running Devin. The plugin has no permission or API to implement Alma mobile device pairing or replace the Mac service.

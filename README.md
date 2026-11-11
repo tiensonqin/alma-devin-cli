@@ -12,7 +12,7 @@ npm run smoke:tools
 npm run check:host
 ```
 
-The first command uses small temporary files to verify native file tools, multiple tools, errors, denials, cancellation during execution, subsequent turns, and Alma SSE with actual terminal tool states. It may incur real model usage and does not depend on herdr.
+The first command uses small temporary files to verify native file tools, multiple-tool execution, errors, denials, cancellation during execution, subsequent turns, and Alma SSE responses. It checks that the tools actually reach terminal states. It may incur real model usage and does not depend on herdr.
 The second command inspects the host read-only and reproduces the permission race in isolated, synthetic memory. The known-affected version, 0.4.570, should exit with code 1; this does not mean the repository's unit tests failed. A passing native probe does not establish that mobile approval and cancellation interactions work.
 The tool smoke test recognizes the repository-managed Devin adapter but rejects unknown launch configurations and never overwrites the provider. Use `DEVIN_PROBE_COMMAND=/path/to/devin npm run smoke:tools -- --native-only` to test only an independent native subprocess; its results do not validate the currently installed host integration.
 
