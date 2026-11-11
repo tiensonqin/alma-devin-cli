@@ -1,70 +1,96 @@
-# 验证记录
+# Verification Record
 
-日期：2026-11-11。仅记录脱敏结果，不包含账号、凭据、个人配置、会话记录或本机绝对路径。
+Date: 2026-11-11. Only sanitized results are recorded; no accounts, credentials, personal configuration, session records, or local absolute paths are included.
 
-## 0.1.2：Devin 专属 Bypass
+## 0.1.2: Devin-only bypass
 
-本次按用户明确授权将插件管理的 Devin 会话固定为全工具自动放行，没有修改其他提供商或全局权限配置。
+With the user's explicit authorization, this version enforces automatic approval for all tools in plugin-managed Devin sessions. It does not change other providers or global permission configuration.
 
-- 核对本机 `devin --help`：`permission_mode=dangerous` 表示自动批准所有工具。
-- 分别实测 `--permission-mode dangerous acp`、`DEVIN_PERMISSION_MODE=dangerous`、独立 `--config` 文件；原生 `session/new` 均仍返回 `accept-edits`，因此这些选项不足以证明 ACP 已进入 bypass。
-- 原生 ACP 实际公布 `bypass`（Bypass Permissions）模式。使用官方 `@agentclientprotocol/sdk@2.6.0` 和标准 `session/set_mode` 设置后，原生发出 `current_mode_update: bypass`。启动层只处理模式约束，其余协议双向转发，不添加私有方法。
+- Checked local `devin --help`: `permission_mode=dangerous` means automatically approving all tools.
+- Tested `--permission-mode dangerous acp`, `DEVIN_PERMISSION_MODE=dangerous`, and a separate `--config` file individually. Native `session/new` still returned `accept-edits` in each case, so these options do not establish that ACP has entered bypass mode.
+- Native ACP actually advertises `bypass` (Bypass Permissions) mode. After setting it with the official `@agentclientprotocol/sdk@2.6.0` and standard `session/set_mode`, the native process emitted `current_mode_update: bypass`. The launcher only enforces the mode; all other protocol traffic is forwarded in both directions, without private methods.
 
-| 检查 | 结果 |
+| Check | Result |
 | --- | --- |
-| `npm test` | 20 项通过：包含旧提供商迁移、并行修改拒绝、幂等安装、升级保留设置／权限／停用状态、卸载还原原命令、标准 new/load/resume 模式约束、双向扩展和通知转发、能力缺失拒绝降级，以及原有聊天／SSE 回归 |
-| 本机升级 | 从 0.1.1 升至 0.1.2，插件启用，仍复用唯一 `devin-cli-acp`；安装器支持同版本 `--force` 复制更新，没有全局刷新其他插件 |
-| 配置范围 | 对比升级前后其他提供商字段：只有宿主动态生成的 `createdAt/updatedAt` 发生变化，其他配置字段未变；提供商总数未变 |
-| 真实模型发现 | 安装时经 Alma 原生 ACP 发现 144 个模型 |
-| `npm run doctor` | 经本机 Alma 连接成功 |
-| `npm run smoke` | 经 Alma 的两轮上下文和独立 SSE 流式聊天均通过 |
-| `npm run smoke:tools` | 使用实际安装的提供商启动独立 ACP，确认原生 mode 更新为 bypass；1 次 exec 已完成并返回随机标记；权限请求数为 0 |
-| 经 Alma 的真实工具链路 | 独立测试聊天使用 SWE-2 High 执行只读 `printf ... \| cat` 后返回随机标记；该测试关联的原生日志显示 `Permission decision for tool exec: auto-decided Some(Allow) by cog`，没有 `prompting user` |
+| `npm test` | 20 passed, including legacy provider migration, concurrent-change rejection, idempotent installation, preserving settings/permissions/disabled state during upgrades, restoring the original command on uninstall, standard new/load/resume mode enforcement, bidirectional extension and notification forwarding, rejecting fallback when capabilities are missing, and existing chat/SSE regressions |
+| Local upgrade | Upgraded from 0.1.1 to 0.1.2; the plugin is enabled and still reuses the single `devin-cli-acp` provider. The installer supports same-version copying with `--force`, without globally refreshing other plugins |
+| Configuration scope | Compared other providers before and after the upgrade: only host-generated `createdAt/updatedAt` changed; all other configuration fields and the total provider count were unchanged |
+| Real model discovery | Discovered 144 models through Alma's native ACP during installation |
+| `npm run doctor` | Connected successfully through local Alma |
+| `npm run smoke` | Both the two-turn context check through Alma and the independent SSE streaming chat passed |
+| `npm run smoke:tools` (at that version; now `npm run smoke:bypass`) | Started independent ACP using the actually installed provider and confirmed a native mode update to bypass; one exec completed with a random marker; zero permission requests |
+| Real tool execution through Alma | A separate test chat used SWE-2 High to run read-only `printf ... \| cat` and return a random marker. Native logs associated with that test showed `Permission decision for tool exec: auto-decided Some(Allow) by cog`, with no `prompting user` |
 
-### 本次仍存在的边界
+### Remaining limitations of this work
 
-- 没有替用户在手机触屏上重试；宿主链路及原生模式已验证，手机仍须连接运行 Devin 的 Mac。
-- 未终止或改写用户已有 ACP 进程、故障 thread 或旧的待审批轮次；启动配置变更不会追溯改变旧进程。需要在新聊天验证，旧轮次由用户自行停止。
-- 先前宿主“审批早于工具部分持久化”的竞态并未修改。原生 bypass 避免普通工具进入该审批路径，不等于修复 Alma 的通用审批 UI；组织强制审批仍可能产生请求。
-- 真实原生 new／工具已测；load/resume 的模式约束使用模拟原生端回归测试，没有加载用户现有会话来测试。云模式、组织强制策略、附件、断线恢复仍未验证。
-- 宿主 Provider REST 没有原子版本锁。插件迁移前二次读取以避免明显的并行覆盖，但不能保证读取与写入之间完全没有外部修改。
+- No touch interaction was retried on the user's phone. The host integration and native mode were verified; the phone still needs to connect to the Mac running Devin.
+- Existing user ACP processes, the affected thread, and old pending-approval turns were not terminated or rewritten. Launch configuration changes do not retroactively affect old processes. Verify in a new chat; the user must stop old turns themselves.
+- The host race where approval arrives before tool-part persistence was not modified. Native bypass keeps ordinary tools off that approval path; it does not fix Alma's general approval UI. Organization-enforced approvals may still generate requests.
+- Real native session creation and tool execution were tested. Mode enforcement for load/resume was covered by regression tests against a mock native endpoint; existing user sessions were not loaded for testing. Cloud mode, organization-enforced policies, attachments, and reconnection remain unverified.
+- The host Provider REST API has no atomic version lock. The plugin rereads before migration to avoid obvious concurrent overwrites, but cannot guarantee that no external change occurs between reading and writing.
 
-以下为先前版本的历史验证记录，不代表 0.1.2 仍只使用直接 `devin acp` 启动参数。
+The following sections preserve the investigation addendum and historical verification records. Earlier records do not mean that 0.1.2 still relies only on direct `devin acp` launch arguments.
 
-## 依据与环境
+## Tool-stall investigation addendum (21:14 incident)
 
-- 当前工作区及已检查祖先目录未发现 `AGENTS.md`；官方 Alma 插件仓库也未发现该文件。
-- 官方插件仓库 `yetone/alma-plugins` 核对提交：`a7fa8285cf263afbd73a1f59b48ce02b753da2b8`。
-- 检查官方插件规范、`packages/plugin-api/src/index.ts`、hello-world、openai-codex-auth，以及本机已安装插件结构。
-- 检查旧 `zed-industries/codex-acp` README（提交 `296069e841634cd4bb9bc4515602d836e49231ec`）及其指向的新 `agentclientprotocol/codex-acp` README；确认 Codex 独立适配器与 Devin 原生 ACP 的区别。
-- 只读核对本机 Alma 的 Provider／插件 REST 路由、ACP 模型发现和聊天消息转换；没有改动 Alma 应用包或数据库。
-- Alma server：0.4.570。Devin CLI：3000.12.43（517d03d73926）。Node.js：24.13.0。
-- 已有 `devin-cli-acp` 提供商，启用状态为 true，原生命令参数为 `devin acp`；安装过程中复用，没有另建提供商，没有改全局默认模型。
+**Approval waiting and subsequent searches producing no output are confirmed; the host race remains unfixed.** The user later explicitly authorized bypass/YOLO for both CLIs. The remote 0.1.2 Devin bypass implementation was retained and integrated to keep ordinary tools off that approval path. This does not fix unbounded search or the mobile approval UI. See [evidence, the minimal host-side proposal, and existing-session recovery](tool-stall-2026-11-11.md). The original session recovered on its own at approximately 21:34:50; this work did not cancel it.
 
-## 已通过
+The repair task reported the following final verification results; these are not additional runtime tests performed by the documentation translation task:
 
-| 检查 | 结果 |
+- Current `npm test`: 29 passed, covering 0.1.2 mode/upgrade regressions plus new probe cases for permission denial, cancellation notifications, deadlines, process startup failure/exit, merging concurrent terminal states, and rejection of unknown adapters.
+- `npm run smoke:tools`: real bounded file-tool execution followed by a final reply, multiple tool results, a missing-file error, denial, cancellation during a `sleep 20` execution, and a subsequent turn passed. Through the current Alma bypass provider, two file tools completed, a missing-file tool reached a failed terminal state followed by a final reply, and all three SSE rounds received `[DONE]`, including a follow-up turn. Host-log evidence was scoped to the independent test thread.
+- `npm run smoke:bypass`: native bypass mode, a completed exec, and zero approval requests passed.
+- `npm run check:host`: executing the installed host's reducer in isolation **consistently fails (exit code 1)** when approval arrives before the tool part. This is an unfixed host regression and is not counted as a pass.
+- Native ACP denial/error/cancellation verification is not mobile UI verification. REST exports only text and cannot verify mobile approval visibility or the Thinking state.
+- No application bundle, database, or global tool was modified. Although changing the global default model was authorized, it was not changed unnecessarily for troubleshooting. Codex's launch command/arguments alone were changed through Provider REST, preserving its model selection and other settings without terminating existing sessions.
+- The latest supported `npm run install:alma` check reported `installed=true`, `upgraded=false` (0.1.2 was already installed), `enabled=true`, `reusedProvider=true`, `permissionMode=bypass`, and `discoveredModels=146`. This is a later discovery result, not a correction to the historical count of 144. Existing model selections were preserved. Hash comparisons confirmed that six installed runtime files matched the repository; no unnecessary reinstall or global refresh was performed.
+
+### Concurrent changes and validation isolation
+
+When the first complete tool smoke test passed, the provider still used native `devin acp`. A later rerun refused to continue because another task had changed the provider to a Node adapter; it did not overwrite that change.
+After read-only inspection, the user explicitly authorized bypass/YOLO. The repository was then fast-forwarded to remote `5e13d90`, preserving the currently installed 0.1.2: `lib/bypass.mjs` enforces `session/set_mode: bypass` after new/load/resume and also rewrites subsequent mode changes. The other task's configuration was not rolled back or misrepresented as a fix for the host race.
+For a recognized Devin adapter, `smoke:tools` extracts the native command, runs independent denial/error/cancellation regressions in auto mode, then verifies host tools and SSE through the current Alma provider. `smoke:bypass` specifically checks bypass and zero approvals in the installed adapter. Unknown adapters are still rejected. `--native-only` explicitly skips the host integration.
+
+### Basis for Codex configuration
+
+The locally installed `@agentclientprotocol/codex-acp@2.6.0` README explicitly supports `INITIAL_AGENT_MODE=agent-full-access`. The implementation maps this mode to `approvalPolicy: never` and `dangerFullAccess`. The two permission keys in ordinary `CODEX_CONFIG` are insufficient to change that adapter's default mode; this was demonstrated in an independent new session that still returned `agent`.
+Using `PUT /api/providers/codex-acp`, the launcher was set to `/usr/bin/env`, with the environment assignment above and the existing adapter path as arguments. The original model, enabled state, and other provider fields were preserved. A new independent ACP session returned `currentModeId: agent-full-access`; no global tool update or restart of other sessions was needed.
+The repair task also reported two random-file tool completions followed by a final reply, a follow-up turn, and zero approval requests in a new Codex ACP session. Through Alma, the two file replies, both SSE `[DONE]` markers, and the follow-up passed. A bounded 2 MiB host-log tail confirmed two real tool completions for the unique test thread. These checks mitigate the approval-wait path; they do not establish a fix for the host race or search stalls.
+
+## Sources and environment
+
+- No `AGENTS.md` was found in the current workspace or the checked ancestor directories, nor in the official Alma plugin repository.
+- Checked commit in the official plugin repository, `yetone/alma-plugins`: `a7fa8285cf263afbd73a1f59b48ce02b753da2b8`.
+- Reviewed the official plugin specification, `packages/plugin-api/src/index.ts`, hello-world, openai-codex-auth, and the structure of locally installed plugins.
+- Reviewed the old `zed-industries/codex-acp` README at commit `296069e841634cd4bb9bc4515602d836e49231ec` and the new `agentclientprotocol/codex-acp` README it links to, confirming the distinction between Codex's separate adapter and Devin's native ACP.
+- Inspected local Alma Provider/plugin REST routes, ACP model discovery, and chat-message conversion read-only; no Alma application bundle or database changes were made.
+- Alma server: 0.4.570. Devin CLI: 3000.12.43 (517d03d73926). Node.js: 24.13.0.
+- A `devin-cli-acp` provider already existed with enabled state true and native command/arguments `devin acp`. Installation reused it, without creating another provider or changing the global default model.
+
+## Historical passed checks
+
+| Check | Result |
 | --- | --- |
-| `npm test` | 15 项通过：包含去重、冲突拒绝、安装卸载、消息格式、两轮上下文、分片 UTF-8／CRLF／多行 SSE、提前断流、流内错误脱敏、格式错误、事件大小限制及 HTTP 错误回归 |
-| 实际安装 | 0.1.1 已经实际卸载重装；Alma 接受 manifest、加载 ESM 模块，权限已授予，插件 enabled |
-| 重复安装 | 复用现有插件及提供商，无重复记录 |
-| 实际卸载／重装 | 卸载插件成功，提供商保留；重装成功，Devin ACP 提供商仍只有 1 个 |
-| 插件命令 | `alma-devin-cli.status` 与 `alma-devin-cli.refreshModels` 经宿主命令执行接口成功 |
-| 原生连接 | `npm run doctor` 握手、初始化会话及模型发现成功 |
-| 原生模型目录 | Alma 调用 Devin ACP 发现 144 个模型，不使用硬编码目录 |
-| 模型选择器接口 | `GET /api/models` 返回同一个 `devin-cli-acp` 下 144 个可选模型入口 |
-| 两轮聊天 | `npm run smoke`，已启用模型 `adaptive`，两轮都返回 `ALMA_DEVIN_OK` |
-| 流式聊天 | 0.1.1 的 `npm run smoke` 实测 `stream: passed`、6 个非空文本分片，收到预期标记及 SSE `[DONE]`；不再依赖一次性的手动验证命令 |
+| `npm test` | 15 passed, covering deduplication, conflict rejection, install/uninstall, message format, two-turn context, split UTF-8/CRLF/multiline SSE, premature disconnection, sanitization of in-stream errors, malformed input, event-size limits, and HTTP errors |
+| Actual installation | 0.1.1 was actually uninstalled and reinstalled; Alma accepted the manifest, loaded the ESM module, granted permissions, and enabled the plugin |
+| Repeat installation | Reused the existing plugin and provider without duplicate records |
+| Actual uninstall/reinstall | Plugin removal succeeded and preserved the provider; reinstallation succeeded, with exactly one Devin ACP provider remaining |
+| Plugin commands | `alma-devin-cli.status` and `alma-devin-cli.refreshModels` succeeded through the host command-execution API |
+| Native connection | `npm run doctor` completed the handshake, session initialization, and model discovery |
+| Native model catalog | Alma discovered 144 models through Devin ACP, without a hard-coded catalog |
+| Model-selector API | `GET /api/models` returned 144 selectable model entries under the same `devin-cli-acp` provider |
+| Two-turn chat | `npm run smoke`, using enabled model `adaptive`, returned `ALMA_DEVIN_OK` in both turns |
+| Streaming chat | The 0.1.1 `npm run smoke` returned `stream: passed`, six nonempty text chunks, the expected marker, and SSE `[DONE]`; it no longer relies on a one-off manual verification command |
 
-首次聊天测试曾使用 OpenAI 风格 `content` 消息，宿主返回 `Invalid prompt: messages must not be empty`。
-只读核对宿主后改用 Alma 实际要求的 `{ id, role, parts: [{ type: 'text', text }] }`，新增回归测试，重新执行两轮聊天通过。没有修改宿主来迁就测试。
+The first chat test used OpenAI-style `content` messages, and the host returned `Invalid prompt: messages must not be empty`.
+After inspecting the host read-only, the test was changed to Alma's required `{ id, role, parts: [{ type: 'text', text }] }` format. A regression test was added, and the two-turn chat passed on rerun. The host was not modified to accommodate the test.
 
-## 尚未实测／限制
+## Not tested and limitations
 
-- 没有手机实机配对和触屏交互测试。模型入口在 Mac 的共享服务侧验证，不等同于已证实手机完成配对。
-- 手机必须连接运行 Devin 的 Mac；插件没有权限／接口实现 Alma 手机设备配对或替代 Mac 服务。
-- 权限弹窗、附件、多模态、取消、长时间断线恢复和 Devin 云模式未验证。文本及流式通过不等于这些特性也通过。
-- 真机环境已经存在提供商，所以“全新环境创建”走了模拟宿主集成测试，没有为了测试删除现有提供商。新插件的真实安装／卸载已经验证。
-- 原生提供商独立于插件保存；卸载插件后模型入口可继续存在，这是保护已有配置的设计，不是卸载失败。
-- 宿主 ACP 层负责会话生命周期；smoke 使用独立会话标识，不清理 Alma／Devin 自身保留的历史元数据。
-- 私有仓库推荐认证 Git 克隆＋本地安装器；未宣称 Alma 的 GitHub URL 下载器能认证 private 仓库。
+- No physical mobile pairing or touch-interaction testing was performed. Model entries were verified on the Mac's shared service; that does not establish successful phone pairing.
+- The phone must connect to the Mac running Devin. The plugin has no permission or API to implement Alma mobile device pairing or replace the Mac service.
+- Mobile permission dialogs, attachments, multimodal input, recovery after long disconnections, and Devin cloud mode remain unverified. Cancellation was additionally tested only with an independent native ACP probe, not on mobile. Passing text and streaming tests does not establish that these features work.
+- A provider already existed in the real environment, so creation in a fresh environment was covered by a mock-host integration test. The existing provider was not deleted just for testing. Actual installation/uninstallation of the new plugin was verified.
+- Native providers are stored independently of plugins. Model entries may remain after uninstalling the plugin; this preserves existing configuration and is not an uninstall failure.
+- The host ACP layer owns session lifecycle management. Smoke tests use independent session identifiers and do not clear historical metadata retained by Alma/Devin themselves.
+- Authenticated Git cloning followed by the local installer is recommended for private repositories. No claim is made that Alma's GitHub URL downloader can authenticate to private repositories.

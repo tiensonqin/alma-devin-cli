@@ -1,25 +1,38 @@
-# Alma Devin CLI 原生 ACP 插件
+# Alma Devin CLI Native ACP Plugin
 
-在 Alma 中选择 **Devin CLI (ACP)** 并聊天，包括连接同一台 Mac 的 Alma 手机端。
-这是可安装的 Alma **integration 插件**，不是终端记录阅读器，也不是 Devin 私有 API 代理。
+Select **Devin CLI (ACP)** in Alma to chat, including from the Alma mobile app connected to the same Mac.
+This is an installable Alma **integration plugin**, not a terminal transcript reader or a proxy for Devin's private APIs.
 
-## 架构与已查明的接口边界
+> **Known limitations when tools remain in Thinking (Alma 0.4.570):** Approval state is confirmed to be lost when it arrives before the tool part is persisted. One observed incident also involved home-directory searches producing no output for ten minutes. The plugin does not control the host's ACP lifecycle, and passing the text-only SSE test in 0.1.1 does not establish that tools work on mobile. See [incident evidence and the minimal host-side proposal](docs/tool-stall-2026-11-11.md). This work provides diagnostics and regression coverage; it does not claim to have fixed the mobile issue.
 
-```text
-Alma 手机端 → 已连接的 Mac Alma 服务 → Alma 原生 ACP 客户端 → bypass 启动层 → devin acp
+## Regression checks with real tools
+
+```sh
+npm run smoke:tools
+npm run check:host
 ```
 
-- 采用 Devin 自带的 `acp` 子命令；聊天、模型、工具执行仍由 Devin 原生 ACP 提供。0.1.2 使用官方 `@agentclientprotocol/sdk` 做薄启动层，只在新建／加载／恢复会话后调用标准 `session/set_mode` 设为原生 `bypass`，其余请求、通知、扩展方法双向转发；不仿造 Devin 私有接口。
-- 官方插件 API 的 `providers.register()` 注册的是自定义提供商，不提供注册持久化原生 ACP 配置的接口。因此本插件使用 Alma 实际支持的本机 Provider REST API，创建或复用 `type: acp` 提供商，并注册检查、刷新模型命令。
-- 优先复用 `devin-cli-acp`；也会发现其他 ID 下运行 `devin acp` 的提供商。ID 冲突或多个非标准 ID 匹配时拒绝覆盖。只迁移匹配的 Devin 提供商的 `acpCommand/acpArgs` 到启动层，保留原 Devin 命令和参数，以及模型选择、启用状态、MCP 配置；不改其他提供商或全局安全设置。
-- 不把 `openai-codex-auth` 的订阅 OAuth／自定义 fetch 方案套在 Devin 上。Codex CLI 的 ACP 适配器是另一个项目；Devin 已原生支持 ACP，不需要额外适配器。
-- **herdr 的终端会话导入／监视与聊天 ACP 是两回事**。本插件不读取、导入、恢复或修改 herdr 记录，也不承诺导入终端里已有的 Devin 会话。
-- 手机不运行 Devin。**手机端必须通过 Alma 自身的设备连接功能连接运行 Devin 的 Mac**；Mac 上 Alma 需要运行且网络可达。插件不实现设备配对、隧道或手机原生二进制，也不会打开新的公网端口。
+The first command uses small temporary files to verify native file tools, multiple tools, errors, denials, cancellation during execution, subsequent turns, and Alma SSE with actual terminal tool states. It may incur real model usage and does not depend on herdr.
+The second command inspects the host read-only and reproduces the permission race in isolated, synthetic memory. The known-affected version, 0.4.570, should exit with code 1; this does not mean the repository's unit tests failed. A passing native probe does not establish that mobile approval and cancellation interactions work.
+The tool smoke test recognizes the repository-managed Devin adapter but rejects unknown launch configurations and never overwrites the provider. Use `DEVIN_PROBE_COMMAND=/path/to/devin npm run smoke:tools -- --native-only` to test only an independent native subprocess; its results do not validate the currently installed host integration.
 
-## 前置条件与登录
+## Architecture and established API boundaries
 
-1. Mac 已安装并启动 Alma。开发核对版本：Alma server **0.4.570**；旧版本接口不保证兼容。
-2. Node.js 22+，Git，以及已安装、支持 `acp` 的 Devin CLI。检查：
+```text
+Alma mobile app → connected Mac's Alma service → Alma native ACP client → bypass launcher → devin acp
+```
+
+- Uses Devin's built-in `acp` subcommand; chat, models, and tool execution still come from Devin's native ACP implementation. Version 0.1.2 uses the official `@agentclientprotocol/sdk` for a thin launcher. After creating, loading, or resuming a session, it calls the standard `session/set_mode` method to select native `bypass` mode. All other requests, notifications, and extension methods are forwarded in both directions; it does not imitate Devin's private APIs.
+- The official plugin API's `providers.register()` registers custom providers, but offers no API for registering persistent native ACP configurations. This plugin therefore uses Alma's supported local Provider REST API to create or reuse a `type: acp` provider and registers status-check and model-refresh commands.
+- Prefers reusing `devin-cli-acp` and also detects providers running `devin acp` under other IDs. It refuses to overwrite an ID conflict or multiple matching nonstandard IDs. Only the matching Devin provider's `acpCommand/acpArgs` are migrated to the launcher. The original Devin command and arguments, model selection, enabled state, and MCP configuration are preserved; other providers and global security settings are not changed.
+- Does not apply the subscription OAuth/custom fetch approach from `openai-codex-auth` to Devin. The Codex CLI ACP adapter is a separate project; Devin already supports ACP natively and does not need an additional adapter.
+- **herdr's terminal-session import/monitoring and chat ACP are separate features.** This plugin does not read, import, restore, or modify herdr records, and does not promise to import existing terminal-based Devin sessions.
+- Devin does not run on the phone. **The mobile app must use Alma's own device-connection feature to connect to the Mac running Devin.** Alma must be running and reachable on that Mac. The plugin does not implement device pairing, tunnels, or native mobile binaries, and does not open new public network ports.
+
+## Prerequisites and sign-in
+
+1. Alma is installed and running on the Mac. Development was checked against Alma server **0.4.570**; compatibility with older APIs is not guaranteed.
+2. Node.js 22+, Git, and an installed Devin CLI with `acp` support. Check with:
 
    ```sh
    node --version
@@ -29,10 +42,10 @@ Alma 手机端 → 已连接的 Mac Alma 服务 → Alma 原生 ACP 客户端 �
    devin auth status
    ```
 
-3. 在 Mac 的终端交互登录自己的 Devin 账号。无需把任何 Devin token、Cookie 或 API key 填进 Alma；ACP 子进程复用本机 Devin 登录。不要将 `auth status` 的个人账号输出提交或公开。
-4. Devin 必须能访问其服务端、账号有可用额度和模型权限。聊天 smoke 测试可能产生实际用量。
+3. Sign in interactively to your own Devin account in the Mac's terminal. No Devin token, cookie, or API key needs to be entered into Alma; the ACP subprocess reuses the local Devin login. Do not commit or publish the personal account output from `auth status`.
+4. Devin must be able to reach its servers, and the account must have available usage and access to the selected model. Chat smoke tests may incur real usage.
 
-## 安装（推荐）
+## Installation (recommended)
 
 ```sh
 git clone https://github.com/tiensonqin/alma-devin-cli.git
@@ -43,75 +56,78 @@ npm run install:alma
 npm run doctor
 ```
 
-运行时使用锁定版本的官方 ACP SDK 及其依赖；`npm ci --ignore-scripts` 安装锁文件中的依赖，没有 npm 生命周期自动安装脚本。安装器：
+The runtime uses pinned versions of the official ACP SDK and its dependencies. `npm ci --ignore-scripts` installs the dependencies from the lockfile; there is no automatic npm lifecycle installation script. The installer:
 
-1. 自动通过 PATH 查找 Devin，以参数数组运行 Node 启动层，再直接启动原 `devin acp`，不经过 shell。
-2. 查重／复用提供商；不存在时创建 `devin-cli-acp`，不改变全局默认模型。
-3. 请求 Alma 通过原生 ACP 动态发现模型，不硬编码模型目录；只有模型选择为空时才启用首个发现模型。保留已有非空选择，即使其当前不可用，交由用户确认。
-4. 只将 manifest、package 元数据、`main.js`、`lib/`、`bin/` 和两个必需的运行时依赖暂存并通过 Alma 插件安装接口安装，不复制 Git 历史、测试、日志或个人配置。暂存目录随后删除。
+1. Finds Devin on PATH, launches the Node wrapper with an argument array, then starts the original `devin acp` directly without a shell.
+2. Checks for and reuses an existing provider, or creates `devin-cli-acp` if none exists, without changing the global default model.
+3. Asks Alma to discover models dynamically through native ACP rather than using a hard-coded catalog. It enables the first discovered model only if the model selection is empty. Existing nonempty selections are preserved even if currently unavailable, leaving the decision to the user.
+4. Stages only the manifest, package metadata, `main.js`, `lib/`, `bin/`, and the two required runtime dependencies, then installs them through Alma's plugin installation API. Git history, tests, logs, and personal configuration are not copied. The staging directory is removed afterward.
 
-重复安装相同版本复用已有插件和提供商；检测到旧版本时按下述升级流程重装本插件，提供商保留。
-安装某步失败时，已创建的提供商可能仍存在；不会破坏性回滚或删除用户配置，可修复登录后重试。
+Reinstalling the same version reuses the existing plugin and provider. If an older version is detected, the plugin is reinstalled using the upgrade procedure below; the provider is preserved.
+If an installation step fails, an already-created provider may remain. The installer does not destructively roll back or delete user configuration; fix the login issue and retry.
 
-当前仓库为 private，使用已认证的 Git 克隆再运行安装器；不保证 Alma 的 GitHub URL 下载器能认证私有仓库，不能把仓库改成 public 来绕过此限制。不要直接从未安装依赖的源码目录安装，否则启动层缺少 SDK。
-安装器保存实际 Node 路径，避免把 Alma 的打包服务器误当 Node 执行器。新建提供商的 Devin 路径可用 `DEVIN_COMMAND` 指定；已有提供商保留原命令。
-若直接安装只看到了插件、没有模型，请执行命令面板里的「Devin CLI：刷新原生 ACP 模型」。
-不要根据网上旧文档猜测插件目录：当前安装器使用 Alma 自己的安装接口，不写应用包。
+The repository is currently private. Clone it with authenticated Git, then run the installer. Alma's GitHub URL downloader is not guaranteed to authenticate to private repositories; do not make the repository public to work around this limitation. Do not install directly from a source directory without installing its dependencies, or the launcher will lack the SDK.
+The installer saves the actual Node executable path so Alma's bundled server is not mistaken for a Node runtime. Use `DEVIN_COMMAND` to specify Devin's path for a new provider; existing providers retain their original command.
+If direct installation shows the plugin but no models, run the **Devin CLI: Refresh Native ACP Models** command from the command palette.
+Do not guess plugin directory paths from outdated online documentation: the installer uses Alma's own installation API and does not write to the application bundle.
 
-## 配置与选择模型
+## Configuration and model selection
 
-- 默认本机 API 为 `http://localhost:23001`。非默认端口用环境变量 `ALMA_API_URL`；安装后也需在插件设置中配置相同的 `devin.apiUrl`。仅允许无凭据的 HTTP loopback 根地址，不接受远程地址和重定向。
-- 安装器可使用 `DEVIN_COMMAND` 指定本机 Devin 可执行文件；此环境变量只影响**新建**提供商。插件设置的 `devin.command` 同理；已有提供商请在 Alma 提供商设置中修改。
-- 在 Alma「设置 → 提供商」找到 **Devin CLI (ACP)**，确认启用并选择账号实际支持的模型。聊天输入区的模型选择器中选择该提供商下的模型。
-- 如果复用到停用的提供商，插件不会擅自启用，请自行启用。
-- 手机完成与 Mac 的连接后刷新模型列表，选择同一个提供商的模型；不是选择本插件名作为另一套模型供应商。
-- **本插件按用户明确要求固定使用 Bypass Permissions：所有原生工具自动放行。** Devin CLI 帮助将此语义称为 `permission_mode=dangerous`；本机 3000.12.43 实测仅传 `--permission-mode dangerous`、环境变量或独立配置给 `acp`，`session/new` 仍返回 `accept-edits`，所以不能只改启动参数就声称成功。启动层会等待标准 `session/set_mode: bypass` 成功，才向 Alma 返回已就绪会话；没有该模式或设置失败则报错，不静默降级。
-- 会话中的后续 mode 设置同样保持 `bypass`。这只作用于本插件的 Devin 子进程，不写 Devin 全局配置、不修改 Alma 安全配置、不自动增加 MCP。组织强制策略仍以 Devin 服务端为准，插件不绕过组织政策。
-- **高风险提示：bypass 可自动执行删除、写文件、网络命令等工具。只在可信工作区使用。** 它不是沙箱，也不会使操作变为只读。
+- The default local API is `http://localhost:23001`. For a nondefault port, set the `ALMA_API_URL` environment variable and, after installation, configure the same address in the plugin's `devin.apiUrl` setting. Only credential-free HTTP loopback root URLs are allowed; remote addresses and redirects are rejected.
+- The installer accepts `DEVIN_COMMAND` to specify the local Devin executable; this environment variable affects only **new** providers. The plugin's `devin.command` setting behaves the same way. For existing providers, change the command in Alma's provider settings.
+- In Alma's **Settings → Providers**, find **Devin CLI (ACP)**, confirm that it is enabled, and select models your account actually supports. Choose a model under that provider in the chat input's model selector.
+- If a disabled provider is reused, the plugin does not enable it automatically; enable it yourself.
+- After connecting the phone to the Mac, refresh the model list and select a model from the same provider. The plugin name is not a separate model provider to select.
+- **At the user's explicit request, this plugin enforces Bypass Permissions: all native tools are automatically allowed.** Devin CLI help calls this behavior `permission_mode=dangerous`. However, on local version 3000.12.43, passing only `--permission-mode dangerous`, environment variables, or a separate configuration to `acp` still produced `accept-edits` from `session/new`. Changing launch arguments alone is therefore not proof of success. The launcher waits for standard `session/set_mode: bypass` to succeed before returning a ready session to Alma. If the mode is unavailable or setting it fails, the launcher reports an error rather than silently falling back.
+- Subsequent mode changes in the session also remain in `bypass`. This applies only to this plugin's Devin subprocesses: it does not write Devin's global configuration, change Alma's security configuration, or automatically add MCP integrations. Organization-enforced policies remain subject to Devin's server; the plugin does not bypass them.
+- **High-risk behavior: bypass can automatically run tools that delete or write files, execute network commands, and more. Use it only in trusted workspaces.** It is not a sandbox and does not make operations read-only.
 
-## 升级与已存在会话
+## Upgrades and existing sessions
 
-拉取代码后重新执行 `npm ci --ignore-scripts && npm run install:alma`。安装器会检测版本，只卸载／重装本插件并恢复其设置、权限授予／拒绝及停用状态；不会全局刷新所有插件。重复安装相同版本不重复重装。插件激活及检查命令也会迁移旧的原生 Devin 提供商配置，避免升级后仍沿用 `accept-edits` 启动方式。
+After pulling the code, rerun `npm ci --ignore-scripts && npm run install:alma`. The installer detects the version, uninstalls/reinstalls only this plugin, and restores its settings, permission grants/denials, and disabled state. It does not globally refresh all plugins. Reinstalling the same version does not trigger another reinstall. Plugin activation and status-check commands also migrate older native Devin provider configurations so upgrades do not leave them using the `accept-edits` launch configuration.
 
-升级不会终止或改写已运行的 ACP 会话；已有进程不会因提供商配置变更而追溯切换。请在新聊天验证，旧轮次如仍卡住，由用户在 Alma 停止该轮后新建聊天。不会自动批准已过期审批或中断其他聊天。
+Upgrading does not terminate or rewrite running ACP sessions. Existing processes do not retroactively change when provider configuration changes. Verify in a new chat; if an old turn remains stuck, stop that turn in Alma yourself and start a new chat. The plugin does not automatically approve expired requests or interrupt other chats.
 
-同版本开发修复需要重新复制文件时可执行 `npm run install:alma -- --force`，仍只重装本插件并保留其设置。迁移前会再次读取 Devin 启动配置，检测到并行变更则停止而不是覆盖；宿主 REST 接口没有原子版本锁，不能承诺跨进程写入完全无竞态。
+To copy updated files for a development fix without changing the version, run `npm run install:alma -- --force`. This still reinstalls only this plugin and preserves its settings. Before migration, the installer rereads Devin's launch configuration and stops rather than overwriting a detected concurrent change. The host REST API has no atomic version lock, so cross-process writes cannot be guaranteed race-free.
 
 ```sh
 npm run models
 npm run doctor
 npm run smoke
 npm run smoke:tools
+npm run smoke:bypass
 ```
 
-`models` 通过 Alma 原生 ACP 发现并刷新缓存；`doctor` 测试握手和模型发现；`smoke` 经 Alma 聊天 REST 接口做两轮文本对话，验证返回标记与上下文，然后用独立会话测试一次流式响应。流式测试要求收到预期文本及 SSE `[DONE]`，遇到错误事件、提前断流或无效 JSON 会失败，不把部分响应当作成功。这只是解析 Alma 已有的 SSE 输出，不是另写 Devin ACP 协议。
+`models` discovers models through Alma's native ACP and refreshes the cache. `doctor` tests the handshake and model discovery. `smoke` runs two text-conversation turns through Alma's chat REST API, checks the response marker and context, then tests a streaming response in a separate session. The streaming test requires both the expected text and SSE `[DONE]`; error events, premature disconnection, or invalid JSON cause failure. Partial responses do not count as success. This only parses Alma's existing SSE output; it is not a separate implementation of Devin's ACP protocol.
 
-默认使用当前首个已启用模型，也可用 `DEVIN_TEST_MODEL` 指定已启用模型。一次 smoke 共发送三次提示，可能产生实际用量。文本 smoke 提示不使用工具；`tools: none` 只关闭 Alma 提供的工具，不构成对 Devin 内置工具的沙箱承诺。使用独立临时工作目录，测试结束删除。
+The first currently enabled model is used by default. Set `DEVIN_TEST_MODEL` to select another enabled model. A text smoke run sends three prompts and may incur real usage. Text smoke prompts do not use tools; `tools: none` only disables Alma-provided tools and is not a sandbox guarantee for Devin's built-in tools. The test uses a separate temporary working directory and removes it afterward.
 
-`smoke:tools` 则从实际已安装提供商启动独立 ACP 子进程，用官方 SDK 检查会话模式为 `bypass`，要求执行无写入的 `printf ... | cat`，并检查真实 exec 完成事件和随机输出标记，要求权限请求数为零。测试客户端遇到意外审批会取消并报错，而不是代替原生 bypass 批准。仅关闭测试自己启动的进程。两种测试均可能产生模型用量；Alma／Devin 自身可能保留会话元数据，插件不清理它们的历史。
+`smoke:tools` extracts the native command from the recognized installed Devin provider and runs independent file-tool, multiple-tool, error, denial, in-flight cancellation, and follow-up checks in `auto` mode. It then checks actual tool results and SSE through the current Alma provider using its authorized bypass configuration. See the [incident report](docs/tool-stall-2026-11-11.md) for the test boundaries.
 
-## 卸载
+`smoke:bypass` starts an independent ACP subprocess using the actually installed provider. It uses the official SDK to check that the session mode is `bypass`, requests a non-writing `printf ... | cat` command, and checks for an actual completed exec event and a random output marker, with zero permission requests. If an unexpected approval request occurs, the test client cancels and fails rather than approving on behalf of native bypass. It closes only processes it started. These tests may incur model usage; Alma/Devin may retain their own session metadata, and the plugin does not clear their history.
+
+## Uninstallation
 
 ```sh
 npm run uninstall:alma
 ```
 
-推荐使用此命令：先把本插件管理的提供商还原为保存的原生 Devin 命令和参数，再卸载插件，避免留下指向已删除启动层的路径。**保留 ACP 提供商、模型选择、聊天和 Devin 登录**；卸载后不再保证 bypass，权限以原生默认配置为准。若直接在 Alma 插件设置删除，应先在提供商设置还原原生 Devin 命令及 `acp` 参数。若不再需要模型入口，可单独删除提供商；如需退出 Devin，在终端执行 `devin auth logout`。不要修改 Alma 应用包。
+Use this command: it first restores the saved native Devin command and arguments for the provider managed by this plugin, then uninstalls the plugin, avoiding paths to a deleted launcher. **The ACP provider, model selection, chats, and Devin login are preserved.** Bypass is no longer guaranteed after uninstalling; native default permissions apply. If deleting the plugin directly in Alma's plugin settings, first restore the native Devin command and `acp` arguments in the provider settings. Delete the provider separately if you no longer need its model entries. To sign out of Devin, run `devin auth logout` in the terminal. Do not modify the Alma application bundle.
 
-## 安全与排错
+## Security and troubleshooting
 
-- 源代码不读取 Devin 凭据、不记录完整提供商响应、不上传个人配置；本机 API 返回的敏感字段仅在内存中传递，诊断只输出白名单字段。
-- ACP 是有本地工具能力的代理，本插件明确启用全工具自动放行。只选择可信工作区；不要直接暴露 Alma 本机 API 给公网。
-- 找不到命令：确认 Mac GUI 可执行的 Devin 路径，在提供商设置更正后重新测试。
-- 模型发现失败：在同一 Mac 运行 `devin auth login`；确认网络、账号模型权限及 `devin acp --help`，再刷新模型。
-- 模型存在但手机无入口：确认手机连的是这台运行服务的 Mac、提供商已启用、有已选模型；插件无法替代 Alma 的设备连接功能。
-- 本插件依赖下面列明的 Alma REST 路由。若未来版本删除路由或限制本机插件访问，需适配公开宿主接口，不能绕过限制改写应用包。
+- The source does not read Devin credentials, log full provider responses, or upload personal configuration. Sensitive fields returned by the local API are passed only in memory, and diagnostics output only allowlisted fields.
+- ACP is an agent with local tool capabilities, and this plugin explicitly enables automatic approval for all tools. Use only trusted workspaces, and do not expose Alma's local API directly to the public internet.
+- Command not found: confirm the Devin executable path available to the Mac GUI, correct it in provider settings, and retest.
+- Model discovery fails: run `devin auth login` on the same Mac, check network access, account model permissions, and `devin acp --help`, then refresh models.
+- Models exist but do not appear on mobile: confirm that the phone is connected to the Mac running the service, the provider is enabled, and models are selected. The plugin cannot replace Alma's device-connection feature.
+- This plugin depends on the Alma REST routes listed below. If a future version removes them or restricts local plugin access, the plugin must be adapted to the host's public interfaces; modifying the application bundle to bypass restrictions is not acceptable.
 
-## 依据与验证
+## References and verification
 
-- 官方插件规范及示例：[yetone/alma-plugins](https://github.com/yetone/alma-plugins)，本次核对的提交见 [验证记录](docs/verification.md)。检查了 `packages/plugin-api/src/index.ts`、hello-world、openai-codex-auth 及现有已安装插件。
-- Codex 的独立 ACP 适配器：[agentclientprotocol/codex-acp](https://github.com/agentclientprotocol/codex-acp)；旧的 [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) 已在 README 说明迁移。仅参考其 ACP 分层，不安装或替换现有 Codex。
-- 本机 Alma 生成的 `api-spec.md` 及已安装宿主的只读接口核对。使用：`GET/POST /api/providers`、`POST /api/providers/:id/test`、`POST /api/providers/:id/models/fetch`、`PUT /api/providers/:id/models`、`POST /api/chat/completions`、插件列表／安装／卸载接口及命令注册 API。
-- Devin 命令行自带帮助：`devin acp --help`、`devin auth --help`；不依赖未经证实的私有 API 文档。
+- Official plugin specification and examples: [yetone/alma-plugins](https://github.com/yetone/alma-plugins). See the [verification record](docs/verification.md) for the checked commit. The review covered `packages/plugin-api/src/index.ts`, hello-world, openai-codex-auth, and existing installed plugins.
+- Codex's standalone ACP adapter: [agentclientprotocol/codex-acp](https://github.com/agentclientprotocol/codex-acp). The old [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) README documents the migration. Only its ACP layering was used as a reference; this plugin does not install or replace the existing Codex installation.
+- Alma's locally generated `api-spec.md` and read-only inspection of the installed host's interfaces. Interfaces used: `GET/POST /api/providers`, `POST /api/providers/:id/test`, `POST /api/providers/:id/models/fetch`, `PUT /api/providers/:id/models`, `POST /api/chat/completions`, plugin list/install/uninstall endpoints, and the command registration API.
+- Devin's built-in CLI help: `devin acp --help` and `devin auth --help`; no reliance on unverified private API documentation.
 
-手机实机配对、权限弹窗、附件、多模态、取消与长时间重连不属于当前自动化验证的通过声明，见验证记录。
+Physical mobile pairing, permission dialogs, attachments, multimodal input, cancellation, and long disconnections/reconnections are not included in the current automated pass claims. See the verification record.
