@@ -72,7 +72,9 @@ npm run doctor
 npm run smoke
 ```
 
-`models` 通过 Alma 原生 ACP 发现并刷新缓存；`doctor` 测试握手和模型发现；`smoke` 经 Alma 聊天 REST 接口做两轮文本对话，验证返回标记与上下文。默认使用当前首个已启用模型，也可用 `DEVIN_TEST_MODEL` 指定已启用模型。测试不请求执行工具，不自动批准权限；但 `tools: none` 只关闭 Alma 提供的工具，不构成对 Devin 内置工具的沙箱承诺。使用独立临时工作目录，测试结束删除；Alma／Devin 自身可能保留会话元数据，插件不会清理它们的历史。
+`models` 通过 Alma 原生 ACP 发现并刷新缓存；`doctor` 测试握手和模型发现；`smoke` 经 Alma 聊天 REST 接口做两轮文本对话，验证返回标记与上下文，然后用独立会话测试一次流式响应。流式测试要求收到预期文本及 SSE `[DONE]`，遇到错误事件、提前断流或无效 JSON 会失败，不把部分响应当作成功。这只是解析 Alma 已有的 SSE 输出，不是另写 Devin ACP 协议。
+
+默认使用当前首个已启用模型，也可用 `DEVIN_TEST_MODEL` 指定已启用模型。一次 smoke 共发送三次提示，可能产生实际用量。测试不请求执行工具，不自动批准权限；但 `tools: none` 只关闭 Alma 提供的工具，不构成对 Devin 内置工具的沙箱承诺。使用独立临时工作目录，测试结束删除；Alma／Devin 自身可能保留会话元数据，插件不会清理它们的历史。
 
 ## 卸载
 

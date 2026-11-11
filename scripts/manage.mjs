@@ -71,7 +71,13 @@ async function run() {
         model: `${provider.id}:${model}`, stream: false, tools: 'none', threadId, workspacePath: workspace, messages,
       });
       if (!second.choices?.[0]?.message?.content?.includes('ALMA_DEVIN_OK')) throw new Error('第二轮聊天未返回预期标记。');
-      console.log(JSON.stringify({ providerId: provider.id, model, turns: 2, chat: 'passed' }));
+      const stream = await api('/api/chat/completions', 'POST', {
+        model: `${provider.id}:${model}`, stream: true, tools: 'none',
+        threadId: `${threadId}-stream`, workspacePath: workspace,
+        messages: [{ id: randomUUID(), role: 'user', parts: [{ type: 'text', text: 'Do not use any tools. Reply with exactly ALMA_DEVIN_STREAM_OK.' }] }],
+      }, 'sse');
+      if (!stream.text.includes('ALMA_DEVIN_STREAM_OK') || !stream.chunks) throw new Error('流式聊天未返回预期标记。');
+      console.log(JSON.stringify({ providerId: provider.id, model, turns: 2, chat: 'passed', stream: 'passed', streamChunks: stream.chunks }));
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

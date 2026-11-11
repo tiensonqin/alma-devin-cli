@@ -10,6 +10,12 @@ async function withHost(handler, callback) {
     for await (const chunk of request) text += chunk;
     try {
       const result = await handler(request.method, request.url, text ? JSON.parse(text) : undefined);
+      if (result instanceof Response) {
+        response.writeHead(result.status, Object.fromEntries(result.headers));
+        for await (const chunk of result.body) response.write(chunk);
+        response.end();
+        return;
+      }
       response.writeHead(result === undefined ? 204 : 200, { 'Content-Type': 'application/json' });
       response.end(result === undefined ? undefined : JSON.stringify(result));
     } catch {
@@ -74,7 +80,7 @@ test('installer stages only plugin files, is idempotent, uninstall retains provi
   });
 });
 
-test('smoke uses Alma UI message parts and carries second-turn context', async () => {
+test('smoke validates UI message parts, second-turn context and streaming', async () => {
   let turns = 0;
   await withHost(async (method, path, body) => {
     if (path === '/api/providers') return [{ id: 'devin-cli-acp', type: 'acp', enabled: true, acpCommand: 'devin', acpArgs: ['acp'], models: ['test-model'] }];
@@ -84,11 +90,24 @@ test('smoke uses Alma UI message parts and carries second-turn context', async (
     assert.equal(body.model, 'devin-cli-acp:test-model');
     assert.ok(body.messages.every(message => message.id && message.parts?.[0]?.type === 'text'));
     turns++;
+    if (turns === 3) {
+      assert.equal(body.stream, true);
+      assert.equal(body.messages.length, 1);
+      return new Response('data: {"choices":[{"delta":{"content":"ALMA_DEVIN_STREAM_OK"}}]}\n\ndata: [DONE]\n\n', {
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
+    assert.equal(body.stream, false);
     if (turns === 2) {
       assert.equal(body.messages.length, 3);
       assert.equal(body.messages[1].parts[0].text, 'ALMA_DEVIN_OK');
     }
     return { choices: [{ message: { content: 'ALMA_DEVIN_OK' } }] };
-  }, async run => { await run('smoke'); });
-  assert.equal(turns, 2);
+  }, async run => {
+    const result = JSON.parse(await run('smoke'));
+    assert.equal(result.chat, 'passed');
+    assert.equal(result.stream, 'passed');
+    assert.equal(result.streamChunks, 1);
+  });
+  assert.equal(turns, 3);
 });

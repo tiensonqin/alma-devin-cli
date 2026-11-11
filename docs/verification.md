@@ -16,8 +16,8 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| `npm test` | 9 项通过：去重、冲突拒绝、创建配置、模型选择保护、拒绝假 fallback、本机 API 限制、命令生命周期、安装卸载流程及真实消息格式回归 |
-| 实际安装 | Alma 接受 manifest、加载 ESM 模块；权限已授予，插件 enabled |
+| `npm test` | 15 项通过：包含去重、冲突拒绝、安装卸载、消息格式、两轮上下文、分片 UTF-8／CRLF／多行 SSE、提前断流、流内错误脱敏、格式错误、事件大小限制及 HTTP 错误回归 |
+| 实际安装 | 0.1.1 已经实际卸载重装；Alma 接受 manifest、加载 ESM 模块，权限已授予，插件 enabled |
 | 重复安装 | 复用现有插件及提供商，无重复记录 |
 | 实际卸载／重装 | 卸载插件成功，提供商保留；重装成功，Devin ACP 提供商仍只有 1 个 |
 | 插件命令 | `alma-devin-cli.status` 与 `alma-devin-cli.refreshModels` 经宿主命令执行接口成功 |
@@ -25,7 +25,7 @@
 | 原生模型目录 | Alma 调用 Devin ACP 发现 144 个模型，不使用硬编码目录 |
 | 模型选择器接口 | `GET /api/models` 返回同一个 `devin-cli-acp` 下 144 个可选模型入口 |
 | 两轮聊天 | `npm run smoke`，已启用模型 `adaptive`，两轮都返回 `ALMA_DEVIN_OK` |
-| 流式聊天 | 同一 Alma REST → ACP 链路返回 HTTP 200、预期文本标记及 SSE `[DONE]` |
+| 流式聊天 | 0.1.1 的 `npm run smoke` 实测 `stream: passed`、6 个非空文本分片，收到预期标记及 SSE `[DONE]`；不再依赖一次性的手动验证命令 |
 
 首次聊天测试曾使用 OpenAI 风格 `content` 消息，宿主返回 `Invalid prompt: messages must not be empty`。
 只读核对宿主后改用 Alma 实际要求的 `{ id, role, parts: [{ type: 'text', text }] }`，新增回归测试，重新执行两轮聊天通过。没有修改宿主来迁就测试。
