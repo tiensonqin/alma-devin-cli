@@ -14,7 +14,9 @@
     "doctor": "node scripts/manage.mjs doctor",
     "models": "node scripts/manage.mjs models",
     "smoke": "node scripts/manage.mjs smoke",
-    "smoke:tools": "node scripts/smoke-tools.mjs"
+    "smoke:tools": "node scripts/tool-smoke.mjs",
+    "smoke:bypass": "node scripts/smoke-tools.mjs",
+    "check:host": "node scripts/check-host.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "2.6.0"
