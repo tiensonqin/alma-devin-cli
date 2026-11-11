@@ -1,0 +1,16 @@
+{
+  "name": "alma-devin-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Alma integration for the native Devin CLI ACP server",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test",
+    "install:alma": "node scripts/manage.mjs install",
+    "uninstall:alma": "node scripts/manage.mjs uninstall",
+    "doctor": "node scripts/manage.mjs doctor",
+    "models": "node scripts/manage.mjs models",
+    "smoke": "node scripts/manage.mjs smoke"
+  }
+}

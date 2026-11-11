@@ -1,0 +1,25 @@
+{
+  "id": "alma-devin-cli",
+  "name": "Devin CLI (Native ACP)",
+  "version": "0.1.0",
+  "description": "复用 Alma 原生 ACP 提供商连接本机 Devin CLI，不代理私有 API。",
+  "author": { "name": "tiensonqin" },
+  "main": "main.js",
+  "engines": { "alma": ">=0.4.570" },
+  "type": "integration",
+  "permissions": ["network:fetch", "network:localhost", "notifications"],
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "commands": [
+      { "id": "alma-devin-cli.status", "title": "Devin CLI：检查 ACP 配置" },
+      { "id": "alma-devin-cli.refreshModels", "title": "Devin CLI：刷新原生 ACP 模型" }
+    ],
+    "configuration": {
+      "title": "Devin CLI",
+      "properties": {
+        "devin.apiUrl": { "type": "string", "default": "http://localhost:23001", "description": "当前 Mac 的 Alma 本机 API，仅允许 HTTP loopback。" },
+        "devin.command": { "type": "string", "default": "devin", "description": "新建提供商时使用的 Devin 可执行文件；已有提供商保持不变。" }
+      }
+    }
+  }
+}
